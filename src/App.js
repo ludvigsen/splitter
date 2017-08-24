@@ -1,6 +1,7 @@
 import React, { Component } from 'react'
 import Splitter from '../build/contracts/Splitter.json'
 import getWeb3 from './utils/getWeb3'
+import Promise from 'bluebird';
 
 import './css/oswald.css'
 import './css/open-sans.css'
@@ -23,32 +24,59 @@ class App extends Component {
   }
 
   updateBalances() {
-    this.state.web3.eth.getBalance(this.state.alice.address, (err, aliceBalance) => {
-      this.state.web3.eth.getBalance(this.state.bob.address, (err, bobBalance) => {
-        this.state.web3.eth.getBalance(this.state.carol.address, (err, carolBalance) => {
-          this.setState({
-            alice: {
-              ...this.state.alice,
-              balance: aliceBalance
-            },
-            bob: {
-              ...this.state.bob,
-              balance: bobBalance,
-            },
-            carol: {
-              ...this.state.carol,
-              balance: carolBalance
-            }
-          })
+    this.state.web3.eth.getBalancePromise(this.state.alice.address)
+      .then(balance => {
+        this.setState({
+          alice: {
+            ...this.state.alice,
+            balance,
+          }
+        })
+        return this.state.web3.eth.getBalancePromise(this.state.bob.address);
+      }).then(actualBalance => {
+        this.setState({
+          bob: {
+            ...this.state.bob,
+            actualBalance,
+          }
+        })
+        return this.state.web3.eth.getBalancePromise(this.state.alice.address);
+      }).then(actualBalance => {
+        this.setState({
+          carol: {
+            ...this.state.carol,
+            actualBalance,
+          }
+        })
+        return this.state.contract.balances.call(this.state.bob.address, {from: this.state.alice.address});
+      }).then(balance => {
+        this.setState({
+          bob: {
+            ...this.state.bob,
+            balance,
+          }
+        })
+        return this.state.contract.balances.call(this.state.carol.address, {from: this.state.alice.address});
+      }).then(balance => {
+        this.setState({
+          carol: {
+            ...this.state.carol,
+            balance,
+          }
         })
       })
-    })
   }
 
   onSend(e) {
     this.state.contract.split({value: Number(this.state.amount), from: this.state.alice.address}).then((res) => {
       this.updateBalances();
     }).catch((e) => console.log(e));
+  }
+
+  onWithdraw(who) {
+    this.state.contract.withdraw({from: this.state[who].address}).then(res => {
+      this.updateBalances();
+    }).catch(e => console.log(e));
   }
 
   onAmountChange(e) {
@@ -62,7 +90,8 @@ class App extends Component {
     // See utils/getWeb3 for more info.
 
     getWeb3
-    .then(results => {
+      .then(results => {
+        Promise.promisifyAll(results.web3.eth, { suffix: "Promise" });
       this.setState({
         web3: results.web3
       })
@@ -70,7 +99,7 @@ class App extends Component {
       // Instantiate contract once web3 provided.
       this.instantiateContract()
     })
-    .catch(() => {
+    .catch((e) => {
       console.log('Error finding web3.')
     })
   }
@@ -100,7 +129,7 @@ class App extends Component {
           address: accounts[2]
         }
       });
-      splitter.new([accounts[1], accounts[2]], {from: accounts[0], gas: 1000000}).then(instance => {
+      splitter.new(accounts[1], accounts[2], {from: accounts[0], gas: 1000000}).then(instance => {
         this.setState({
           contract: instance,
         });
@@ -121,9 +150,9 @@ class App extends Component {
             <div className="pure-u-1-1">
               <p>Alice: {this.state.alice.balance ? this.state.alice.balance.toString() : 0} </p>
               <p>{this.state.alice.address}</p>
-              <p>Bob: {this.state.bob.balance ? this.state.bob.balance.toString() : 0} </p>
+        <p>Bob: {this.state.bob.balance ? this.state.bob.balance.toString() : 0} / {this.state.bob.actualBalance ? this.state.bob.actualBalance.toString() : 0} <button onClick={this.onWithdraw.bind(this, 'bob')}>Withdraw</button></p>
               <p>{this.state.bob.address}</p>
-              <p>Carol: {this.state.carol.balance ? this.state.carol.balance.toString() : 0} </p>
+        <p>Carol: {this.state.carol.balance ? this.state.carol.balance.toString() : 0} / {this.state.carol.actualBalance ? this.state.carol.actualBalance.toString() : 0} <button onClick={this.onWithdraw.bind(this, 'carol')}>Withdraw</button></p>
               <p>{this.state.carol.address}</p>
               <input type="number" onChange={this.onAmountChange}/>
               <button onClick={this.onSend}>Send</button>

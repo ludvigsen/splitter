@@ -1,28 +1,57 @@
 pragma solidity ^0.4.2;
 
-contract Splitter {
-  address public owner;
-  address[] public splitters;
+contract Owned {
+  address owner;
 
-  function Splitter(address[] _splitters) {
+  function Owned() {
     owner = msg.sender;
-    splitters = _splitters;
   }
 
-  modifier isOwner() {
+  modifier onlyOwner {
     require(msg.sender == owner);
+    _;
+  }
+}
+
+contract Killable is Owned {
+  bool killed;
+
+  function kill() onlyOwner {
+    selfdestruct(owner);
+  }
+}
+
+contract Splitter is Killable {
+  address public bob;
+  address public carol;
+  mapping(address => uint) public balances;
+
+  function Splitter(address _bob, address _carol) {
+    bob = _bob;
+    carol = _carol;
+  }
+
+  modifier bobOrCarol {
+    require(msg.sender == bob || msg.sender == carol);
     _;
   }
 
   function split()
     payable
-    isOwner
+    onlyOwner
   {
-    uint amount = msg.value / splitters.length;
-    for(uint i = 0; i < splitters.length; i++) {
-      if(!splitters[i].send(amount)) {
-        revert();
-      }
+    uint amount = msg.value / 2;
+    uint remainder = msg.value % 2;
+    balances[bob] = balances[bob] + amount;
+    balances[carol] = balances[carol] + amount + remainder;
+  }
+
+  function withdraw()
+    bobOrCarol
+  {
+    if (!msg.sender.send(balances[msg.sender])) {
+      revert();
     }
+    balances[msg.sender] = 0;
   }
 }
